@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # ── Google Gemini ────────────────────────────────────────────────────────
     gemini_api_key: str = Field(default="")
-    gemini_model: str = Field(default="gemini-2.5-flash")
+    gemini_model: str = Field(default="")
 
     # ── Database ─────────────────────────────────────────────────────────────
     # Database URL is strictly loaded from DATABASE_URL in .env
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="")
 
     # ── CORS ─────────────────────────────────────────────────────────────────
-    cors_origins: str = Field(default="http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
+    cors_origins: str = Field(default="")
 
     # ── Security ─────────────────────────────────────────────────────────────
     # Secret key is strictly loaded from SECRET_KEY in .env
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     enable_tools: bool = Field(default=True)
 
     # ── Vector Store (PostgreSQL pgvector) ───────────────────────────────────
-    embedding_model: str = Field(default="all-MiniLM-L6-v2")
+    embedding_model: str = Field(default="")
     vector_dimension: int = Field(default=384)
 
     @property

@@ -1,0 +1,54 @@
+# =============================================================================
+# Dynamic AI Chatbot — Production Docker Compose (Cloud DB & Cloud Cache)
+# =============================================================================
+# Used when deploying to a Production VPS using external managed cloud databases:
+#   - Database: Neon.tech Serverless PostgreSQL + pgvector
+#   - Cache:    Upstash Serverless Redis
+#
+# Only the stateless Application Services (Backend & Frontend) are deployed.
+# No local database containers are run, maximizing performance & saving RAM.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up --build -d
+# =============================================================================
+
+services:
+  # ── FastAPI Backend ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatbot-backend-prod
+    restart: always
+    mem_limit: 512m
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, httpx; p = os.getenv('PORT') or os.getenv('APP_PORT') or '8000'; r = httpx.get(f'http://127.0.0.1:{p}/api/health'); exit(0 if r.status_code == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── React Frontend (Nginx Alpine) ────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chatbot-frontend-prod
+    restart: always
+    mem_limit: 128m
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend

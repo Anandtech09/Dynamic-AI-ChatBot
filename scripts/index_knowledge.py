@@ -23,9 +23,14 @@ if sys.platform == "win32":
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
-from backend.app.services.rag_service import RAGService  # noqa: E402
-from backend.app.core.config import get_settings  # noqa: E402
-from backend.app.db.database import init_db  # noqa: E402
+try:
+    from app.services.rag_service import RAGService  # noqa: E402 works with docker compose
+    from app.core.config import get_settings  # noqa: E402 works with docker compose
+    from app.db.database import init_db  # noqa: E402 works with docker compose
+except ImportError:
+    from backend.app.services.rag_service import RAGService  # noqa: E402 works on local run
+    from backend.app.core.config import get_settings  # noqa: E402
+    from backend.app.db.database import init_db  # noqa: E402
 
 
 async def main():
