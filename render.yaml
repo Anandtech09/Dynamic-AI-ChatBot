@@ -25,13 +25,15 @@ services:
       - key: APP_DEBUG
         value: "false"
       - key: GEMINI_API_KEY
-        sync: false  # Prompt user to input their Gemini key or leave blank for Demo Mode
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: DATABASE_URL
-        sync: false  # Paste your free Neon.tech or Supabase connection string here
+        sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: REDIS_URL
+        sync: false
       - key: CORS_ORIGINS
         value: "*"
 

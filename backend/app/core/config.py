@@ -99,6 +99,10 @@ class Settings(BaseSettings):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         if "sslmode=require" in url:
             url = url.replace("sslmode=require", "ssl=require")
+        # Strip libpq-only params (e.g., channel_binding) unsupported by asyncpg
+        if "channel_binding=" in url:
+            import re
+            url = re.sub(r"[&?]channel_binding=[^&]+", "", url)
         return url
 
     model_config = SettingsConfigDict(

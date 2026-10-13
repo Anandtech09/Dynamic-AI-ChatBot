@@ -12,13 +12,20 @@ import asyncio
 import os
 import sys
 
+# Ensure UTF-8 stdout encoding on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Add directories to path so app modules can be imported in both container and host
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
-from app.services.rag_service import RAGService  # noqa: E402
-from app.core.config import get_settings  # noqa: E402
-from app.db.database import init_db  # noqa: E402
+from backend.app.services.rag_service import RAGService  # noqa: E402
+from backend.app.core.config import get_settings  # noqa: E402
+from backend.app.db.database import init_db  # noqa: E402
 
 
 async def main():

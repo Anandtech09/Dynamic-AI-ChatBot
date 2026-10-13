@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.db.database import get_db
 from app.schemas.schemas import HealthResponse, KnowledgeListResponse
 from app.services.rag_service import RAGService
+from app.services.cache_service import get_cache_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Health & Knowledge"])
@@ -39,6 +40,10 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     # RAG (PostgreSQL pgvector)
     rag = RAGService()
     services["knowledge_base"] = "available" if rag.is_available else "unavailable"
+
+    # Redis Cache
+    cache = get_cache_service()
+    services["redis_cache"] = "connected" if await cache.is_healthy() else "unavailable"
 
     status = "ok" if services.get("database") == "healthy" else "degraded"
 

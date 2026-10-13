@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.db.database import async_session_factory
 from app.db.repositories.repositories import KnowledgeRepository
+from app.services.cache_service import get_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -148,10 +149,19 @@ class RAGService:
 
         count = await self._execute_with_session(_save)
         logger.info("Successfully indexed %d chunks for document '%s' into PostgreSQL pgvector", count, title)
+        # Invalidate cached searches when new content is indexed
+        cache = get_cache_service()
+        await cache.invalidate_rag_cache()
         return count
 
     async def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """Semantic vector similarity search over the knowledge base using pgvector."""
+        """Semantic vector similarity search over the knowledge base using pgvector with Redis caching."""
+        cache = get_cache_service()
+        cached = await cache.get_rag_search(query, top_k)
+        if cached is not None:
+            logger.debug("Redis cache HIT for RAG search query: %s", query)
+            return cached
+
         query_vector = self.embedding_engine.generate_embedding(query)
 
         async def _search(session: AsyncSession):
@@ -159,7 +169,10 @@ class RAGService:
             return await repo.search_chunks(query_vector=query_vector, top_k=top_k)
 
         try:
-            return await self._execute_with_session(_search)
+            results = await self._execute_with_session(_search)
+            if results:
+                await cache.set_rag_search(query, top_k, results)
+            return results
         except Exception as e:
             logger.error("RAG vector search failed: %s", e, exc_info=True)
             return []
@@ -196,7 +209,11 @@ class RAGService:
             return await repo.delete_document(title)
 
         try:
-            return await self._execute_with_session(_delete)
+            deleted = await self._execute_with_session(_delete)
+            if deleted:
+                cache = get_cache_service()
+                await cache.invalidate_rag_cache()
+            return deleted
         except Exception as e:
             logger.error("Failed to delete document '%s': %s", title, e)
             return False

@@ -71,6 +71,7 @@ Deploy the entire full-stack project live on the internet with **zero cost** and
    - `APP_DEBUG`: `false`
    - `SECRET_KEY`: *(Enter any random secret string, e.g. generate via `openssl rand -hex 32`)*
    - `CORS_ORIGINS`: `*`
+   - REDIS_URL: *(Optional: paste your free Upstash Redis URL, or leave empty)*
 6. Click **Create Web Service**. Once deployed, copy your backend URL:
    `https://dynamic-chatbot-backend.onrender.com`
    *(Verify it by opening `/docs` in your browser)*
