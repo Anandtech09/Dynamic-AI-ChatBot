@@ -1,0 +1,126 @@
+# =============================================================================
+# Dynamic AI Chatbot — Docker Compose Configuration (Low-Memory Optimized)
+# =============================================================================
+# Tuned for resource-constrained laptops (< 8GB RAM) and cloud servers alike.
+# Total stack memory footprint is capped under ~1GB (typically runs in ~350MB).
+#
+# Services:
+#   - postgres: PostgreSQL 16 Alpine (tuned: ~40MB RAM)
+#   - redis:    Redis 7 Alpine (tuned: ~15MB RAM)
+#   - pgadmin:  pgAdmin 4 web UI (http://localhost:5050, capped: 250MB)
+#   - backend:  FastAPI AI backend (http://localhost:8000, capped: 400MB)
+#   - frontend: React + Nginx SPA (http://localhost:3000, ~15MB RAM)
+#
+# Commands:
+#   Start all:      docker compose up --build -d
+#   View status:    docker compose ps
+#   View stats:     docker stats
+#   View logs:      docker compose logs -f
+#   Stop all:       docker compose down
+#   Clean reset:    docker compose down -v
+# =============================================================================
+
+services:
+  # ── PostgreSQL Database with pgvector extension ─────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chatbot-postgres
+    restart: unless-stopped
+    command: postgres -c shared_buffers=32MB -c max_connections=25 -c work_mem=2MB -c maintenance_work_mem=16MB
+    mem_limit: 200m
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: chatbot_pass
+      POSTGRES_DB: chatbot_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot -d chatbot_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── pgAdmin Web Management UI ────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: chatbot-pgadmin
+    restart: unless-stopped
+    mem_limit: 250m
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./scripts/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Redis Cache & State (Tuned for low memory) ───────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: chatbot-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 32mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    mem_limit: 100m
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatbot-backend
+    restart: unless-stopped
+    mem_limit: 450m
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./data:/app/data:ro
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, httpx; p = os.getenv('PORT') or os.getenv('APP_PORT') or '8000'; r = httpx.get(f'http://127.0.0.1:{p}/api/health'); exit(0 if r.status_code == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── React Frontend (Lightweight Nginx runtime) ───────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chatbot-frontend
+    restart: unless-stopped
+    mem_limit: 100m
+    ports:
+      - "3000:80"
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  redis_data:

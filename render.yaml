@@ -1,0 +1,56 @@
+# =============================================================================
+# Dynamic AI Chatbot — Render.com Blueprint (100% Free Tier Deployment)
+# =============================================================================
+# Usage:
+#   1. Push this repo to GitHub
+#   2. Go to https://dashboard.render.com -> "New" -> "Blueprint"
+#   3. Connect your GitHub repository
+#   4. Render automatically provisions the Backend and Frontend on the Free tier!
+# =============================================================================
+
+services:
+  # ── Backend FastAPI Web Service ──────────────────────────────────────────────
+  - type: web
+    name: dynamic-chatbot-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false  # Prompt user to input their Gemini key or leave blank for Demo Mode
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: DATABASE_URL
+        sync: false  # Paste your free Neon.tech or Supabase connection string here
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "*"
+
+  # ── Frontend React + Vite Static Site ────────────────────────────────────────
+  - type: web
+    name: dynamic-chatbot-frontend
+    runtime: static
+    rootDir: frontend
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: dynamic-chatbot-backend
+          property: host
