@@ -379,7 +379,7 @@ class KnowledgeRepository:
                 document_id=doc.id,
                 chunk_index=c["chunk_index"],
                 content=c["content"],
-                section=c.get("section", ""),
+                section=str(c.get("section", "") or "")[:250],
                 embedding=c.get("embedding"),
             )
             self.db.add(chunk)

@@ -127,12 +127,16 @@ class RAGService:
             return 0
 
         chunks_data = []
+        current_section = ""
         for i, chunk in enumerate(chunks):
+            sec = self._extract_section(chunk)
+            if sec:
+                current_section = sec
             embedding = self.embedding_engine.generate_embedding(chunk)
             chunks_data.append({
                 "chunk_index": i,
                 "content": chunk,
-                "section": self._extract_section(chunk),
+                "section": current_section,
                 "embedding": embedding,
             })
 
@@ -468,7 +472,11 @@ class RAGService:
         for line in text.split("\n"):
             line = line.strip()
             if line.startswith("#"):
-                return line.lstrip("#").strip()
+                clean = line.lstrip("#").strip()
+                return clean[:120]
             if line.startswith("--- Page "):
-                return line.strip("- ").strip()
+                clean = line.strip("- ").strip()
+                return clean[:120]
+            if re.match(r"^Page\s+\d+(\s+of\s+\d+)?", line, re.IGNORECASE):
+                return line[:120]
         return ""

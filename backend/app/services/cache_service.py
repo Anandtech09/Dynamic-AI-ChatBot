@@ -36,12 +36,17 @@ class CacheService:
         if self._redis is None:
             try:
                 import redis.asyncio as aioredis
+                url = self.settings.redis_url
+                # Auto-upgrade to SSL rediss:// for cloud endpoints (e.g., Upstash) that require TLS
+                if "upstash.io" in url and url.startswith("redis://"):
+                    url = url.replace("redis://", "rediss://", 1)
+
                 self._redis = aioredis.from_url(
-                    self.settings.redis_url,
+                    url,
                     encoding="utf-8",
                     decode_responses=True,
-                    socket_connect_timeout=2.0,
-                    socket_timeout=2.0,
+                    socket_connect_timeout=3.0,
+                    socket_timeout=3.0,
                 )
             except Exception as e:
                 logger.warning("Could not connect to Redis at %s: %s", self.settings.redis_url, e)

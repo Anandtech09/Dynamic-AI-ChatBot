@@ -23,10 +23,19 @@ async def list_conversations(
     session_id: str = Query(default="default"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all conversations for a session."""
+    """List all conversations for a session (accelerated with Redis cache)."""
+    from app.services.cache_service import get_cache_service
+    cache = get_cache_service()
+    cache_key = f"conv:list:{session_id}"
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        return ConversationListResponse(success=True, data=cached)
+
     service = ConversationService(db)
     conversations = await service.list_conversations(session_id)
-    return ConversationListResponse(success=True, data=conversations)
+    dumped = [c.model_dump() for c in conversations]
+    await cache.set(cache_key, dumped, ttl=300)
+    return ConversationListResponse(success=True, data=dumped)
 
 
 @router.get("/{conversation_id}")

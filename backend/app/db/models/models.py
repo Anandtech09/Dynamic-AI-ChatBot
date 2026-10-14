@@ -35,7 +35,7 @@ class Conversation(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     session_id = Column(String(64), nullable=False, index=True)
-    title = Column(String(256), default="New Conversation")
+    title = Column(Text, default="New Conversation")
     language = Column(String(20), default="en")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
@@ -170,9 +170,9 @@ class KnowledgeDocument(Base):
     __mapper_args__ = {"confirm_deleted_rows": False}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
-    title = Column(String(256), nullable=False, unique=True, index=True)
-    source = Column(String(256), default="")
-    category = Column(String(64), default="general")
+    title = Column(Text, nullable=False, unique=True, index=True)
+    source = Column(Text, default="")
+    category = Column(Text, default="general")
     chunk_count = Column(Integer, default=0)
     character_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -204,7 +204,7 @@ class KnowledgeChunk(Base):
     )
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    section = Column(String(256), default="")
+    section = Column(Text, default="")
     embedding = Column(PGVECTOR_TYPE)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
