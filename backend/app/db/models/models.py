@@ -167,6 +167,7 @@ class KnowledgeDocument(Base):
     """Document indexed in the RAG knowledge base."""
 
     __tablename__ = "knowledge_documents"
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     title = Column(String(256), nullable=False, unique=True, index=True)
@@ -183,6 +184,7 @@ class KnowledgeDocument(Base):
         "KnowledgeChunk",
         back_populates="document",
         cascade="all, delete-orphan",
+        passive_deletes=True,
         order_by="KnowledgeChunk.chunk_index",
     )
 
@@ -191,6 +193,7 @@ class KnowledgeChunk(Base):
     """Semantic text chunk with 384-dim dense vector embedding in PostgreSQL."""
 
     __tablename__ = "knowledge_chunks"
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     document_id = Column(

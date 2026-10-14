@@ -25,6 +25,7 @@ def _get_rag() -> RAGService:
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 3
+    document_title: Optional[str] = None
 
 
 @router.post("/upload")
@@ -51,9 +52,10 @@ async def upload_document(
             chunk_size=chunk_size,
         )
 
+        pages_info = f" from {result['page_count']} pages" if result.get("page_count", 1) > 1 else ""
         return {
             "success": True,
-            "message": f"Successfully indexed {result['chunk_count']} chunks into PostgreSQL pgvector",
+            "message": f"Successfully indexed {result['chunk_count']} chunks{pages_info} into PostgreSQL pgvector",
             "data": result,
         }
     except ValueError as e:
@@ -93,12 +95,17 @@ async def delete_document(title: str):
 
 @router.post("/search")
 async def search_knowledge(request: SearchRequest):
-    """Test semantic search over indexed documents."""
+    """Test hybrid semantic & lexical search with RRF over indexed documents."""
     rag = _get_rag()
-    results = await rag.search(request.query, top_k=request.top_k)
+    results = await rag.search(
+        request.query,
+        top_k=request.top_k,
+        document_title=request.document_title,
+    )
     return {
         "success": True,
         "query": request.query,
+        "document_title": request.document_title,
         "count": len(results),
         "results": results,
     }

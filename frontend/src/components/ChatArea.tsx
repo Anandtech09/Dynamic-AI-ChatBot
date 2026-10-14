@@ -15,7 +15,13 @@ import { ChatInput } from './ChatInput';
 import { exportConversation } from '../services/api';
 
 interface ChatAreaProps {
-  onSendMessage: (message: string, imageData?: string, audioData?: string, fileName?: string) => void;
+  onSendMessage: (
+    message: string,
+    imageData?: string,
+    audioData?: string,
+    fileName?: string,
+    ragDocumentTitle?: string,
+  ) => void;
 }
 
 const QUICK_PROMPTS = [
@@ -30,6 +36,7 @@ export function ChatArea({ onSendMessage }: ChatAreaProps) {
     messages,
     isLoading,
     activeConversationId,
+    loadingConversationId,
     toggleSidebar,
     settings,
     isDemoMode,
@@ -90,7 +97,9 @@ export function ChatArea({ onSendMessage }: ChatAreaProps) {
 
       <div className="flex-1 overflow-y-auto px-4">
         <div className="max-w-3xl mx-auto py-4">
-          {isEmpty ? (
+          {loadingConversationId ? (
+            <ConversationLoadingSkeleton />
+          ) : isEmpty ? (
             <EmptyState onPromptClick={(p) => onSendMessage(p)} />
           ) : (
             <>
@@ -109,6 +118,45 @@ export function ChatArea({ onSendMessage }: ChatAreaProps) {
       </div>
 
       <ChatInput onSend={onSendMessage} />
+    </div>
+  );
+}
+
+function ConversationLoadingSkeleton() {
+  return (
+    <div className="flex flex-col gap-6 py-6 animate-pulse" aria-label="Loading conversation history">
+      <div className="flex items-center justify-center gap-2 mb-4 p-2 rounded-xl bg-surface-100 dark:bg-surface-800/60 w-fit mx-auto border border-surface-200 dark:border-surface-700/60 shadow-xs">
+        <div className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-medium text-surface-600 dark:text-surface-300">Loading conversation history...</span>
+      </div>
+
+      {/* Assistant message skeleton */}
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-xl bg-surface-200 dark:bg-surface-700 shrink-0" />
+        <div className="space-y-2 max-w-md w-full">
+          <div className="h-4 bg-surface-200 dark:bg-surface-700 rounded-md w-3/4" />
+          <div className="h-4 bg-surface-200 dark:bg-surface-700 rounded-md w-1/2" />
+        </div>
+      </div>
+
+      {/* User message skeleton */}
+      <div className="flex items-start gap-3 justify-end">
+        <div className="space-y-2 max-w-sm w-full">
+          <div className="h-4 bg-primary-200 dark:bg-primary-900/50 rounded-md w-full ml-auto" />
+          <div className="h-4 bg-primary-200 dark:bg-primary-900/50 rounded-md w-2/3 ml-auto" />
+        </div>
+        <div className="w-8 h-8 rounded-xl bg-primary-200 dark:bg-primary-900/50 shrink-0" />
+      </div>
+
+      {/* Assistant response skeleton */}
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-xl bg-surface-200 dark:bg-surface-700 shrink-0" />
+        <div className="space-y-2 max-w-lg w-full">
+          <div className="h-4 bg-surface-200 dark:bg-surface-700 rounded-md w-5/6" />
+          <div className="h-4 bg-surface-200 dark:bg-surface-700 rounded-md w-4/6" />
+          <div className="h-4 bg-surface-200 dark:bg-surface-700 rounded-md w-2/6" />
+        </div>
+      </div>
     </div>
   );
 }

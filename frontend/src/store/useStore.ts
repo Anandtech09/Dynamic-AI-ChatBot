@@ -13,6 +13,12 @@ interface AppState {
   setConversations: (convs: Conversation[]) => void;
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
+  loadingConversationId: string | null;
+  setLoadingConversationId: (id: string | null) => void;
+
+  conversationCache: Record<string, ChatMessage[]>;
+  cacheConversationMessages: (id: string, msgs: ChatMessage[]) => void;
+  clearConversationCache: (id?: string) => void;
 
   messages: ChatMessage[];
   setMessages: (msgs: ChatMessage[]) => void;
@@ -55,6 +61,19 @@ export const useStore = create<AppState>((set) => ({
   setConversations: (conversations) => set({ conversations }),
   activeConversationId: null,
   setActiveConversationId: (id) => set({ activeConversationId: id }),
+  loadingConversationId: null,
+  setLoadingConversationId: (loadingConversationId) => set({ loadingConversationId }),
+
+  conversationCache: {},
+  cacheConversationMessages: (id, msgs) =>
+    set((s) => ({ conversationCache: { ...s.conversationCache, [id]: msgs } })),
+  clearConversationCache: (id) =>
+    set((s) => {
+      if (!id) return { conversationCache: {} };
+      const next = { ...s.conversationCache };
+      delete next[id];
+      return { conversationCache: next };
+    }),
 
   messages: [],
   setMessages: (messages) => set({ messages }),

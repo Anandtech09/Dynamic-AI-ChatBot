@@ -65,7 +65,13 @@ function App() {
     } catch {}
   };
 
-  const handleSendMessage = useCallback(async (text: string, imageData?: string, audioData?: string, fileName?: string) => {
+  const handleSendMessage = useCallback(async (
+    text: string,
+    imageData?: string,
+    audioData?: string,
+    fileName?: string,
+    ragDocumentTitle?: string,
+  ) => {
     if (isLoading) return;
 
     // Add user message immediately
@@ -91,6 +97,7 @@ function App() {
         imageData,
         audioData,
         fileName,
+        ragDocumentTitle,
       );
 
       if (res.success && res.data) {
@@ -116,6 +123,11 @@ function App() {
           is_faq: res.data.is_faq,
         };
         addMessage(assistantMsg);
+        const convId = activeConversationId || res.data.conversation_id;
+        if (convId) {
+          const currentMsgs = [...useStore.getState().messages, assistantMsg];
+          useStore.getState().cacheConversationMessages(convId, currentMsgs);
+        }
 
         // Refresh conversation list
         loadConversations();
@@ -153,24 +165,51 @@ function App() {
   const handleSelectConversation = useCallback(async (id: string) => {
     if (id === activeConversationId) return;
     setActiveConversationId(id);
+
+    const store = useStore.getState();
+    const cached = store.conversationCache[id];
+
+    if (cached && cached.length > 0) {
+      // 1. Instant Cache Hit: Instantaneous load with zero UI latency
+      setMessages(cached);
+      store.setLoadingConversationId(null);
+
+      // Background revalidation (SWR pattern)
+      try {
+        const res = await getConversation(id);
+        if (res.data?.messages) {
+          store.cacheConversationMessages(id, res.data.messages);
+          if (useStore.getState().activeConversationId === id) {
+            setMessages(res.data.messages);
+          }
+        }
+      } catch {}
+      return;
+    }
+
+    // 2. Cache Miss: Display sleek conversation history loader
+    store.setLoadingConversationId(id);
     setMessages([]);
-    setIsLoading(true);
 
     try {
       const res = await getConversation(id);
       if (res.data?.messages) {
-        setMessages(res.data.messages);
+        store.cacheConversationMessages(id, res.data.messages);
+        if (useStore.getState().activeConversationId === id) {
+          setMessages(res.data.messages);
+        }
       }
     } catch {
       // Silently fail
     } finally {
-      setIsLoading(false);
+      store.setLoadingConversationId(null);
     }
   }, [activeConversationId]);
 
   const handleDeleteConversation = useCallback(async (id: string) => {
     try {
       await apiDeleteConversation(id);
+      useStore.getState().clearConversationCache(id);
       if (activeConversationId === id) {
         setActiveConversationId(null);
         setMessages([]);

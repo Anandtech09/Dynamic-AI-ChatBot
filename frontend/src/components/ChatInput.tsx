@@ -18,7 +18,13 @@ import { uploadDocument, getDocuments, deleteDocument } from '../services/api';
 import type { RagDocument } from '../types';
 
 interface ChatInputProps {
-  onSend: (message: string, imageData?: string, audioData?: string, fileName?: string) => void;
+  onSend: (
+    message: string,
+    imageData?: string,
+    audioData?: string,
+    fileName?: string,
+    ragDocumentTitle?: string,
+  ) => void;
   onStop?: () => void;
 }
 
@@ -30,6 +36,7 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
   const [attachedFileName, setAttachedFileName] = useState<string | null>(null);
   const [showRagModal, setShowRagModal] = useState(false);
   const [ragDocuments, setRagDocuments] = useState<RagDocument[]>([]);
+  const [selectedRagDoc, setSelectedRagDoc] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
@@ -56,7 +63,11 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
     }
   }, [input]);
 
-  // Load indexed RAG documents when modal opens
+  // Load indexed RAG documents on initial mount and when modal opens
+  useEffect(() => {
+    fetchRagDocs();
+  }, []);
+
   useEffect(() => {
     if (showRagModal) {
       fetchRagDocs();
@@ -233,7 +244,9 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
     setUploadStatus(null);
     try {
       const res = await uploadDocument(file);
-      setUploadStatus(`Indexed ${res.data?.chunks || 1} chunks from "${file.name}"!`);
+      const chunkCount = res.data?.chunk_count || res.data?.chunks || 1;
+      const pageInfo = res.data?.page_count && res.data.page_count > 1 ? ` (${res.data.page_count} pages)` : '';
+      setUploadStatus(`Indexed ${chunkCount} chunks${pageInfo} from "${file.name}"!`);
       setAttachedFileName(file.name);
       setInput((prev) => (prev.includes('#rag') ? prev : `#rag Query about ${file.name.replace(/\.[^/.]+$/, '')}: `));
       await fetchRagDocs();
@@ -256,8 +269,9 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
   };
 
   const handleToggleRagTag = () => {
-    if (input.toLowerCase().includes('#rag')) {
+    if (input.toLowerCase().includes('#rag') || selectedRagDoc) {
       setInput((prev) => prev.replace(/#rag\s*/i, '').trim());
+      setSelectedRagDoc('');
     } else {
       setInput((prev) => `#rag ${prev}`.trim() + ' ');
       textareaRef.current?.focus();
@@ -277,6 +291,7 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
         imageData || undefined,
         undefined,
         attachedFileName || undefined,
+        selectedRagDoc || undefined,
       );
       setInput('');
       setImageData(null);
@@ -294,10 +309,10 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
     }
   };
 
-  const hasRagTag = input.toLowerCase().includes('#rag');
+  const hasRagTag = input.toLowerCase().includes('#rag') || Boolean(selectedRagDoc);
 
   return (
-    <div className="border-t border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-4 relative">
+    <div className="border-t border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-2.5 sm:p-4 relative">
       <div className="max-w-3xl mx-auto space-y-2">
         {/* Attachment Previews Tray */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -307,7 +322,7 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
               <img
                 src={imageData}
                 alt="Attached preview"
-                className="w-20 h-20 object-cover rounded-xl border-2 border-primary-500 shadow-md"
+                className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border-2 border-primary-500 shadow-md"
               />
               <button
                 onClick={removeImage}
@@ -323,7 +338,7 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
           {attachedFileName && (
             <div className="relative inline-flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-xl text-xs text-purple-900 dark:text-purple-200 font-medium animate-fade-in shadow-xs">
               <BookOpen size={14} className="text-purple-600 dark:text-purple-400 shrink-0" />
-              <span className="truncate max-w-[220px]">{attachedFileName}</span>
+              <span className="truncate max-w-[180px] sm:max-w-[240px]">{attachedFileName}</span>
               <button
                 type="button"
                 onClick={() => setAttachedFileName(null)}
@@ -350,8 +365,50 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
           </div>
         )}
 
+        {/* RAG Document Selector Strip */}
+        {hasRagTag && (
+          <div className="flex items-center justify-between gap-2 p-2 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs animate-fade-in flex-wrap shadow-xs">
+            <div className="flex items-center gap-1.5 font-semibold text-purple-700 dark:text-purple-300">
+              <BookOpen size={13} className="text-purple-600 dark:text-purple-400" />
+              <span>RAG Target:</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+              <select
+                id="rag-document-selector"
+                value={selectedRagDoc}
+                onChange={(e) => {
+                  setSelectedRagDoc(e.target.value);
+                  if (!input.toLowerCase().includes('#rag')) {
+                    setInput((prev) => `#rag ${prev}`.trim() + ' ');
+                  }
+                }}
+                className="w-full bg-white dark:bg-surface-800 border border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-100 rounded-lg px-2.5 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer shadow-2xs"
+                title="Select specific document for RAG search"
+              >
+                <option value="">🌐 All Documents (Hybrid Search + RRF)</option>
+                {ragDocuments.map((doc, idx) => (
+                  <option key={idx} value={doc.title}>
+                    📄 {doc.title} ({doc.chunk_count ?? doc.chunks ?? '?'} chunks)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedRagDoc('');
+                setInput((prev) => prev.replace(/#rag\s*/i, '').trim());
+              }}
+              className="p-1 rounded-md text-purple-500 hover:bg-purple-200/60 dark:hover:bg-purple-900/60 transition-colors cursor-pointer"
+              title="Reset RAG search filter"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
         {isRecording && (
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 shadow-sm animate-fade-in gap-3">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 shadow-sm animate-fade-in gap-3 flex-wrap">
             <div className="flex items-center gap-2.5">
               <span
                 className={`w-3 h-3 rounded-full ${
@@ -367,7 +424,6 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Pause / Resume */}
               {!isPaused ? (
                 <button
                   type="button"
@@ -388,7 +444,6 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
                 </button>
               )}
 
-              {/* Discard */}
               <button
                 type="button"
                 onClick={cancelRecording}
@@ -398,11 +453,10 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
                 <Trash2 size={16} />
               </button>
 
-              {/* Send Voice directly */}
               <button
                 type="button"
                 onClick={stopAndSendRecording}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer"
                 title="Send Voice Recording"
               >
                 <Send size={14} />
@@ -412,24 +466,9 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
           </div>
         )}
 
-        {/* Input Bar */}
-        <div className="relative flex items-end gap-2 bg-surface-100 dark:bg-surface-800 rounded-2xl border border-surface-200 dark:border-surface-700 focus-within:ring-2 focus-within:ring-primary-500/40 focus-within:border-primary-500 transition-all">
-          {/* Quick RAG tag pill */}
-          <button
-            type="button"
-            onClick={handleToggleRagTag}
-            className={`self-center ml-2 px-2.5 py-1 rounded-lg text-xs font-semibold tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
-              hasRagTag
-                ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-400'
-                : 'bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:text-purple-600'
-            }`}
-            title="Toggle #RAG search tag in query"
-          >
-            <BookOpen size={12} />
-            #RAG
-          </button>
-
-          {/* Text Area */}
+        {/* Modern Mobile-Optimized Input Card */}
+        <div className="relative flex flex-col bg-surface-100 dark:bg-surface-800/90 rounded-2xl border border-surface-200 dark:border-surface-700 focus-within:ring-2 focus-within:ring-primary-500/40 focus-within:border-primary-500 transition-all shadow-xs p-1.5 sm:p-2">
+          {/* Full-width Responsive Text Area */}
           <textarea
             ref={textareaRef}
             value={input}
@@ -438,96 +477,124 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
             placeholder={
               isRecording
                 ? 'Recording voice note (up to 3 min)... Click "Send Voice" when done.'
+                : hasRagTag
+                ? `Ask question with RAG (${selectedRagDoc ? `Doc: ${selectedRagDoc}` : 'All Docs (Hybrid RRF)'})...`
                 : 'Ask anything, or use #rag to search knowledge...'
             }
             rows={1}
-            className="flex-1 resize-none bg-transparent px-2 py-3 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 dark:placeholder:text-surface-500 focus:outline-none max-h-40"
+            className="w-full resize-none bg-transparent px-2.5 pt-2 pb-1.5 text-sm sm:text-base text-surface-900 dark:text-surface-100 placeholder:text-surface-400 dark:placeholder:text-surface-500 focus:outline-none max-h-40 min-h-[44px] leading-relaxed"
             disabled={isLoading && !isStreaming}
             aria-label="Message input"
             id="chat-input"
           />
 
-          {/* Action Tools (Voice, Image, Document RAG) */}
-          <div className="flex items-center gap-1 p-1.5 self-center">
-            {/* Hidden file inputs */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImageSelect}
-              accept="image/*"
-              className="hidden"
-            />
-            <input
-              type="file"
-              ref={docInputRef}
-              onChange={handleDocUpload}
-              accept=".pdf,.txt,.md,.docx,.csv"
-              className="hidden"
-            />
+          {/* Action Toolbar Row (Generous spacing on mobile & desktop) */}
+          <div className="flex items-center justify-between pt-1 border-t border-surface-200/50 dark:border-surface-700/50 mt-1">
+            {/* Left side attachment actions */}
+            <div className="flex items-center gap-1">
+              {/* Hidden file inputs */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImageSelect}
+                accept="image/*"
+                className="hidden"
+              />
+              <input
+                type="file"
+                ref={docInputRef}
+                onChange={handleDocUpload}
+                accept=".pdf,.txt,.md,.docx,.csv"
+                className="hidden"
+              />
 
-            {/* Image attachment button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded-xl text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors cursor-pointer"
-              title="Upload Image for Multimodal Vision Analysis"
-              aria-label="Upload Image"
-            >
-              <ImageIcon size={18} />
-            </button>
-
-            {/* Document RAG upload button / modal opener */}
-            <button
-              type="button"
-              onClick={() => setShowRagModal(true)}
-              className="p-2 rounded-xl text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors cursor-pointer"
-              title="Manage & Upload RAG Documents (PDF, TXT, MD)"
-              aria-label="RAG Documents"
-            >
-              <FileText size={18} />
-            </button>
-
-            {/* Voice Input Button */}
-            <button
-              type="button"
-              onClick={isRecording ? cancelRecording : startRecording}
-              className={`p-2 rounded-xl transition-all cursor-pointer ${
-                isRecording
-                  ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/30'
-                  : 'text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
-              }`}
-              title={
-                isRecording
-                  ? 'Recording in progress (Click to cancel)'
-                  : 'Record voice note (Click to start, max 3 min)'
-              }
-              aria-label="Record voice note"
-            >
-              <Mic size={18} />
-            </button>
-
-            {/* Send / Stop button */}
-            {isStreaming ? (
+              {/* RAG Tag Toggle Button */}
               <button
                 type="button"
-                onClick={onStop}
-                className="p-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors cursor-pointer"
-                aria-label="Stop generation"
+                onClick={handleToggleRagTag}
+                className={`px-2 py-1 rounded-xl text-xs font-semibold tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                  hasRagTag
+                    ? 'bg-purple-600 text-white shadow-xs ring-1 ring-purple-400'
+                    : 'bg-surface-200/80 dark:bg-surface-700/80 text-surface-600 dark:text-surface-300 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:text-purple-600'
+                }`}
+                title="Toggle #RAG search tag in query"
               >
-                <StopCircle size={18} />
+                <BookOpen size={13} />
+                <span>#RAG</span>
+                {selectedRagDoc && (
+                  <span className="max-w-[70px] sm:max-w-[120px] truncate text-[10px] opacity-90 border-l border-white/40 pl-1 font-normal">
+                    {selectedRagDoc}
+                  </span>
+                )}
               </button>
-            ) : (
+
+              {/* Upload Image Button */}
               <button
                 type="button"
-                onClick={handleSend}
-                disabled={(!input.trim() && !imageData && !isRecording) || isLoading}
-                className="p-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm cursor-pointer"
-                aria-label="Send message"
-                id="send-btn"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1.5 sm:p-2 rounded-xl text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors cursor-pointer"
+                title="Upload Image for Multimodal Vision Analysis"
+                aria-label="Upload Image"
               >
-                <Send size={18} />
+                <ImageIcon size={18} />
               </button>
-            )}
+
+              {/* Document RAG Upload / Management Modal Opener */}
+              <button
+                type="button"
+                onClick={() => setShowRagModal(true)}
+                className="p-1.5 sm:p-2 rounded-xl text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors cursor-pointer"
+                title="Manage & Upload RAG Documents (PDF, TXT, MD)"
+                aria-label="RAG Documents"
+              >
+                <FileText size={18} />
+              </button>
+            </div>
+
+            {/* Right side primary actions */}
+            <div className="flex items-center gap-1.5">
+              {/* Voice Input Button */}
+              <button
+                type="button"
+                onClick={isRecording ? cancelRecording : startRecording}
+                className={`p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer ${
+                  isRecording
+                    ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/30'
+                    : 'text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
+                }`}
+                title={
+                  isRecording
+                    ? 'Recording in progress (Click to cancel)'
+                    : 'Record voice note (Click to start, max 3 min)'
+                }
+                aria-label="Record voice note"
+              >
+                <Mic size={18} />
+              </button>
+
+              {/* Send / Stop Button */}
+              {isStreaming ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="p-2 sm:p-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors cursor-pointer"
+                  aria-label="Stop generation"
+                >
+                  <StopCircle size={18} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={(!input.trim() && !imageData && !attachedFileName && !isRecording) || isLoading}
+                  className="p-2 sm:p-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xs active:scale-95 cursor-pointer"
+                  aria-label="Send message"
+                  id="send-btn"
+                >
+                  <Send size={18} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -538,9 +605,9 @@ export function ChatInput({ onSend, onStop }: ChatInputProps) {
             <code className="px-1 py-0.5 rounded bg-surface-200 dark:bg-surface-800 text-purple-600 dark:text-purple-400 font-mono">
               #rag
             </code>{' '}
-            to search your documents
+            for Hybrid Search + RRF
           </span>
-          <span>🎙️ Voice messages (max 3 min) | 🖼️ Vision supported</span>
+          <span className="hidden sm:inline">🎙️ Voice messages | 🖼️ Vision supported</span>
         </div>
       </div>
 

@@ -37,6 +37,7 @@ export async function sendMessage(
   imageData?: string,
   audioData?: string,
   fileName?: string,
+  ragDocumentTitle?: string,
 ): Promise<ApiResponse<ChatResponseData>> {
   return request<ApiResponse<ChatResponseData>>('/chat', {
     method: 'POST',
@@ -49,6 +50,7 @@ export async function sendMessage(
       image_data: imageData,
       audio_data: audioData,
       file_name: fileName,
+      rag_document_title: ragDocumentTitle,
     }),
   });
 }
@@ -97,6 +99,10 @@ export async function getActivityData(
   days = 30,
 ): Promise<ApiResponse<ActivityData>> {
   return request(`/analytics/activity?days=${days}`);
+}
+
+export async function getLearningData(): Promise<ApiResponse<any>> {
+  return request('/analytics/learning');
 }
 
 export async function getSettings(

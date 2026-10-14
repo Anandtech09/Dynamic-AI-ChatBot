@@ -154,27 +154,41 @@ class RAGService:
         await cache.invalidate_rag_cache()
         return count
 
-    async def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """Semantic vector similarity search over the knowledge base using pgvector with Redis caching."""
+    async def search(
+        self,
+        query: str,
+        top_k: int = 3,
+        document_title: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Hybrid Semantic & Lexical Search with Reciprocal Rank Fusion (RRF),
+        Multi-Feature Re-ranking, Document-Specific Filtering, and Redis caching.
+        """
         cache = get_cache_service()
-        cached = await cache.get_rag_search(query, top_k)
+        cache_query_key = f"{query}::doc={document_title}" if document_title else query
+        cached = await cache.get_rag_search(cache_query_key, top_k)
         if cached is not None:
-            logger.debug("Redis cache HIT for RAG search query: %s", query)
+            logger.debug("Redis cache HIT for RAG search query: %s", cache_query_key)
             return cached
 
         query_vector = self.embedding_engine.generate_embedding(query)
 
         async def _search(session: AsyncSession):
             repo = KnowledgeRepository(session)
-            return await repo.search_chunks(query_vector=query_vector, top_k=top_k)
+            return await repo.search_chunks(
+                query_vector=query_vector,
+                query=query,
+                top_k=top_k,
+                document_title=document_title,
+            )
 
         try:
             results = await self._execute_with_session(_search)
             if results:
-                await cache.set_rag_search(query, top_k, results)
+                await cache.set_rag_search(cache_query_key, top_k, results)
             return results
         except Exception as e:
-            logger.error("RAG vector search failed: %s", e, exc_info=True)
+            logger.error("RAG hybrid vector search failed: %s", e, exc_info=True)
             return []
 
     async def get_document_list(self) -> List[Dict[str, Any]]:
@@ -242,6 +256,112 @@ class RAGService:
 
         return total_chunks
 
+    @classmethod
+    def extract_text_from_file(cls, filename: str, file_bytes: bytes) -> tuple[str, int]:
+        """
+        Extract clean text and page/record count from uploaded file bytes.
+        Supports PDF (multi-page, 30+ pages), DOCX, CSV, TXT, MD, and JSON.
+        Returns: (extracted_text, page_or_item_count)
+        """
+        import io
+        import csv
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        ext = Path(filename).suffix.lower()
+        text = ""
+        count = 1
+
+        if ext == ".pdf":
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                count = len(reader.pages)
+                pages_text = []
+                for idx, page in enumerate(reader.pages, start=1):
+                    p_text = page.extract_text() or ""
+                    cleaned = p_text.strip()
+                    if cleaned:
+                        pages_text.append(f"--- Page {idx} ---\n{cleaned}")
+                text = "\n\n".join(pages_text)
+            except Exception as e:
+                logger.warning("pypdf extraction failed for %s: %s; trying fallback", filename, e)
+                try:
+                    raw = file_bytes.decode("latin-1", errors="ignore")
+                    words = re.findall(r"[A-Za-z0-9\s.,!?;:\"'-]{4,}", raw)
+                    text = " ".join(words)
+                except Exception as fallback_err:
+                    logger.error("PDF fallback failed: %s", fallback_err)
+                    text = file_bytes.decode("utf-8", errors="ignore")
+
+        elif ext == ".docx":
+            try:
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as docx:
+                    xml_content = docx.read("word/document.xml")
+                    tree = ET.fromstring(xml_content)
+                    namespaces = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                    paragraphs = []
+                    for p in tree.iterfind(".//w:p", namespaces):
+                        p_texts = [node.text for node in p.iterfind(".//w:t", namespaces) if node.text]
+                        if p_texts:
+                            paragraphs.append("".join(p_texts).strip())
+                    text = "\n\n".join([p for p in paragraphs if p])
+                    count = len(paragraphs)
+            except Exception as e:
+                logger.warning("DOCX extraction error for %s: %s", filename, e)
+                text = file_bytes.decode("utf-8", errors="ignore")
+
+        elif ext == ".csv":
+            try:
+                raw_str = file_bytes.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raw_str = file_bytes.decode("latin-1", errors="ignore")
+
+            try:
+                reader = csv.reader(io.StringIO(raw_str))
+                rows = list(reader)
+                if rows:
+                    headers = [h.strip() for h in rows[0]]
+                    count = len(rows) - 1
+                    formatted_rows = []
+                    for i, row in enumerate(rows[1:], start=1):
+                        row_items = [
+                            f"{headers[j] if j < len(headers) else f'Col{j+1}'}: {val.strip()}"
+                            for j, val in enumerate(row)
+                            if val.strip()
+                        ]
+                        if row_items:
+                            formatted_rows.append(f"Row {i} -> " + ", ".join(row_items))
+                    text = (
+                        f"CSV Document: {filename}\nHeaders: {', '.join(headers)}\n\n"
+                        + "\n".join(formatted_rows)
+                    )
+            except Exception as e:
+                logger.warning("CSV parsing error: %s", e)
+                text = raw_str
+
+        elif ext in (".txt", ".md"):
+            try:
+                text = file_bytes.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = file_bytes.decode("latin-1", errors="ignore")
+
+        elif ext == ".json":
+            try:
+                import json
+                obj = json.loads(file_bytes.decode("utf-8"))
+                text = json.dumps(obj, indent=2)
+            except Exception:
+                text = file_bytes.decode("utf-8", errors="ignore")
+
+        else:
+            try:
+                text = file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                text = file_bytes.decode("latin-1", errors="ignore")
+
+        return text.strip(), count
+
     async def chunk_and_index_file(
         self,
         filename: str,
@@ -250,31 +370,10 @@ class RAGService:
         chunk_overlap: int = 50,
     ) -> Dict[str, Any]:
         """Extract text from uploaded file bytes, chunk, and index into PostgreSQL pgvector."""
-        ext = Path(filename).suffix.lower()
-        text = ""
+        text, page_count = self.extract_text_from_file(filename, file_bytes)
 
-        if ext in (".txt", ".md", ".json", ".csv"):
-            try:
-                text = file_bytes.decode("utf-8")
-            except UnicodeDecodeError:
-                text = file_bytes.decode("latin-1", errors="ignore")
-        elif ext == ".pdf":
-            try:
-                raw = file_bytes.decode("latin-1", errors="ignore")
-                stream_texts = re.findall(r"\((.*?)\)", raw)
-                if stream_texts:
-                    text = " ".join([t for t in stream_texts if len(t) > 2 and t.isprintable()])
-                if len(text) < 50:
-                    words = re.findall(r"[A-Za-z0-9\s.,!?;:\"'-]{4,}", raw)
-                    text = " ".join(words)
-            except Exception as e:
-                logger.warning("PDF extraction fallback: %s", e)
-                text = file_bytes.decode("utf-8", errors="ignore")
-        else:
-            text = file_bytes.decode("utf-8", errors="ignore")
-
-        if not text.strip():
-            raise ValueError(f"Could not extract readable text from file '{filename}'")
+        if not text:
+            raise ValueError(f"Could not extract readable text from file '{filename}'. Please ensure the file contains valid text.")
 
         title = Path(filename).stem.replace("_", " ").replace("-", " ").title()
         chunk_count = await self.index_document(
@@ -289,41 +388,87 @@ class RAGService:
             "filename": filename,
             "chunk_count": chunk_count,
             "character_count": len(text),
+            "page_count": page_count,
             "preview": text[:200] + ("..." if len(text) > 200 else ""),
         }
 
-    @staticmethod
-    def _chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
-        """Split text into overlapping chunks with preserved boundary context."""
-        paragraphs = text.split("\n\n")
-        chunks = []
+    @classmethod
+    def _chunk_text(cls, text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
+        """
+        Split text into overlapping chunks with preserved sentence and paragraph context.
+        Handles multi-page documents (30+ pages) cleanly without cutting words in half.
+        """
+        if not text or not text.strip():
+            return []
+
+        # Normalize newlines
+        clean_text = text.replace("\r\n", "\n").replace("\r", "\n")
+        paragraphs = [p.strip() for p in clean_text.split("\n\n") if p.strip()]
+
+        refined_blocks: List[str] = []
+        for p in paragraphs:
+            if len(p) <= chunk_size:
+                refined_blocks.append(p)
+            else:
+                # Sub-split large paragraphs by sentence endings
+                sentences = re.split(r'(?<=[.!?])\s+', p)
+                sub_block = ""
+                for s in sentences:
+                    s = s.strip()
+                    if not s:
+                        continue
+                    if len(sub_block) + len(s) + 1 <= chunk_size:
+                        sub_block = f"{sub_block} {s}".strip() if sub_block else s
+                    else:
+                        if sub_block:
+                            refined_blocks.append(sub_block)
+                        # If a single sentence exceeds chunk_size, split by word
+                        if len(s) > chunk_size:
+                            words = s.split()
+                            word_acc = ""
+                            for w in words:
+                                if len(word_acc) + len(w) + 1 <= chunk_size:
+                                    word_acc = f"{word_acc} {w}".strip() if word_acc else w
+                                else:
+                                    if word_acc:
+                                        refined_blocks.append(word_acc)
+                                    word_acc = w
+                            if word_acc:
+                                refined_blocks.append(word_acc)
+                            sub_block = ""
+                        else:
+                            sub_block = s
+                if sub_block:
+                    refined_blocks.append(sub_block)
+
+        chunks: List[str] = []
         current_chunk = ""
 
-        for para in paragraphs:
-            para = para.strip()
-            if not para:
-                continue
-            if len(current_chunk) + len(para) < chunk_size:
-                current_chunk += ("\n\n" if current_chunk else "") + para
+        for block in refined_blocks:
+            if not current_chunk:
+                current_chunk = block
+            elif len(current_chunk) + len(block) + 2 <= chunk_size:
+                current_chunk = f"{current_chunk}\n\n{block}"
             else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    overlap = current_chunk[-chunk_overlap:] if len(current_chunk) > chunk_overlap else ""
-                    current_chunk = (overlap + "\n\n" if overlap else "") + para
+                chunks.append(current_chunk)
+                if chunk_overlap > 0 and len(current_chunk) > chunk_overlap:
+                    overlap_seed = current_chunk[-chunk_overlap:].strip()
+                    current_chunk = f"{overlap_seed}\n\n{block}"
                 else:
-                    chunks.append(para[:chunk_size])
-                    current_chunk = para[chunk_size:]
+                    current_chunk = block
 
-        if current_chunk:
+        if current_chunk and (not chunks or current_chunk != chunks[-1]):
             chunks.append(current_chunk)
 
         return chunks if chunks else [text[:chunk_size]]
 
     @staticmethod
     def _extract_section(text: str) -> str:
-        """Extract a markdown section heading from chunk text."""
+        """Extract a markdown section heading or page indicator from chunk text."""
         for line in text.split("\n"):
             line = line.strip()
             if line.startswith("#"):
                 return line.lstrip("#").strip()
+            if line.startswith("--- Page "):
+                return line.strip("- ").strip()
         return ""

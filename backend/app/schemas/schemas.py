@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     image_data: Optional[str] = None  # Base64 data URL or remote image URL
     audio_data: Optional[str] = None  # Base64 audio or audio transcript
     file_name: Optional[str] = None  # Uploaded file / document name
+    rag_document_title: Optional[str] = None  # Filter RAG to specific document (None = all)
 
 
 class SentimentResult(BaseModel):
@@ -46,6 +47,8 @@ class SourceResult(BaseModel):
     title: str
     section: Optional[str] = None
     score: Optional[float] = None
+    rrf_score: Optional[float] = None
+    recall_at_k: Optional[float] = None
 
 
 class ChatResponse(BaseModel):

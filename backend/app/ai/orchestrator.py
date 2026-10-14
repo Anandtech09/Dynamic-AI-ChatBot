@@ -25,7 +25,7 @@ from app.ai.prompts.prompt_templates import (
     UNIFIED_CHAT_RESPONSE_SCHEMA_PROMPT,
     get_language_instruction,
 )
-from app.ai.providers import LLMProvider, get_llm_provider
+from app.ai.providers import DemoProvider, LLMProvider, get_llm_provider
 from app.core.config import get_settings
 from app.nlp.faq_matcher import get_faq_matcher
 from app.nlp.intent_classifier import get_intent_classifier
@@ -94,7 +94,7 @@ class AIOrchestrator:
         self.rag_service = rag_service
         self.tool_registry = tool_registry or create_tool_registry(rag_service)
         self.settings = get_settings()
-        self.is_demo = self.settings.is_demo_mode
+        self.is_demo = self.settings.is_demo_mode or isinstance(self.llm, DemoProvider)
 
         # Dedicated NLP components
         self.intent_classifier = get_intent_classifier()
@@ -114,6 +114,7 @@ class AIOrchestrator:
         temperature: float = 0.7,
         max_tokens: int = 2048,
         image_data: Optional[str] = None,
+        rag_document_title: Optional[str] = None,
     ) -> OrchestratorResult:
         """
         Full pipeline: NLP analysis → FAQ match → RAG retrieval → tool execution → generate → guardrails.
@@ -147,14 +148,14 @@ class AIOrchestrator:
                 for e in raw_entities
             ]
 
-            # Detect explicit #rag tag in query
+            # Detect explicit #rag tag in query or targeted document selection
             is_explicit_rag = any(tag in user_message.lower() for tag in ["#rag", "[rag]", "rag:"])
-            if is_explicit_rag:
+            if is_explicit_rag or rag_document_title:
                 result.intent = "rag_search"
                 result.intent_confidence = 0.98
 
             # 2. Pre-trained FAQ matcher (Rule + ML instant answers)
-            if not is_explicit_rag and not image_data:
+            if not is_explicit_rag and not image_data and not rag_document_title:
                 faq_hit = self.faq_matcher.match(user_message)
                 if faq_hit and faq_hit.confidence >= 0.65:
                     result.reply = faq_hit.answer
@@ -173,18 +174,22 @@ class AIOrchestrator:
             if tool_results:
                 result.tools_used = list(tool_results.keys())
 
-            # 4. RAG retrieval (triggered if #rag tag present, or rag_search intent, or RAG enabled)
+            # 4. RAG retrieval (triggered if #rag tag present, rag_document_title selected, or rag_search intent)
             rag_context = ""
             rag_results = []
             clean_rag_query = re.sub(r"(?i)#rag|\[rag\]|rag:\s*", "", user_message).strip()
             if not clean_rag_query:
                 clean_rag_query = user_message
 
-            should_search_rag = is_explicit_rag or result.intent == "rag_search"
+            should_search_rag = is_explicit_rag or bool(rag_document_title) or result.intent == "rag_search"
 
             if self.rag_service and should_search_rag:
                 try:
-                    rag_results = await self.rag_service.search(clean_rag_query, top_k=3)
+                    rag_results = await self.rag_service.search(
+                        clean_rag_query,
+                        top_k=3,
+                        document_title=rag_document_title,
+                    )
                     if rag_results:
                         result.is_rag = True
                         rag_context = "\n\n".join(
@@ -198,6 +203,8 @@ class AIOrchestrator:
                                 "title": r.get("title", "Unknown"),
                                 "section": r.get("section", ""),
                                 "score": r.get("score", 0),
+                                "rrf_score": r.get("rrf_score"),
+                                "recall_at_k": r.get("recall_at_k"),
                             }
                             for r in rag_results
                         ]

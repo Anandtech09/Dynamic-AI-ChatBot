@@ -267,15 +267,27 @@ export function MessageBubble({ message, onRegenerate, onSelectSuggestion }: Mes
               Retrieved RAG Sources (PostgreSQL pgvector):
             </span>
             {message.sources.map((src, i) => (
-              <div key={i} className="flex items-center justify-between py-1 border-b border-purple-100 dark:border-purple-900/30 last:border-0">
-                <span className="text-surface-700 dark:text-surface-300 font-medium truncate">
+              <div key={i} className="flex items-center justify-between py-1 border-b border-purple-100 dark:border-purple-900/30 last:border-0 flex-wrap gap-1">
+                <span className="text-surface-700 dark:text-surface-300 font-medium truncate max-w-[240px]">
                   📄 {src.title} {src.section ? `— ${src.section}` : ''}
                 </span>
-                {src.score !== undefined && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 ml-2 shrink-0">
-                    Similarity: {Math.round(src.score * 100)}%
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                  {src.score !== undefined && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                      Score: {Math.round(src.score * 100)}%
+                    </span>
+                  )}
+                  {src.recall_at_k !== undefined && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-mono" title="Recall@K (retrieved relevant chunks over candidate pool)">
+                      Recall@K: {Math.round(src.recall_at_k * 100)}%
+                    </span>
+                  )}
+                  {src.rrf_score !== undefined && (
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-surface-200/60 dark:bg-surface-800 text-surface-500 font-mono" title="Reciprocal Rank Fusion score">
+                      RRF: {src.rrf_score}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

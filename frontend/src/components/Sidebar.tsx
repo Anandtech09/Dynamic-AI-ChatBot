@@ -68,6 +68,7 @@ export function Sidebar({ onNewChat, onSelectConversation, onDeleteConversation 
     setSidebarOpen,
     conversations,
     activeConversationId,
+    loadingConversationId,
     currentPage,
     setCurrentPage,
     isDemoMode,
@@ -167,6 +168,7 @@ export function Sidebar({ onNewChat, onSelectConversation, onDeleteConversation 
                     key={conv.id}
                     conversation={conv}
                     isActive={conv.id === activeConversationId && currentPage === 'chat'}
+                    isLoading={conv.id === loadingConversationId}
                     onSelect={() => handleSelectConv(conv.id)}
                     onDelete={() => onDeleteConversation(conv.id)}
                   />
@@ -205,11 +207,13 @@ export function Sidebar({ onNewChat, onSelectConversation, onDeleteConversation 
 function ConversationItem({
   conversation,
   isActive,
+  isLoading,
   onSelect,
   onDelete,
 }: {
   conversation: Conversation;
   isActive: boolean;
+  isLoading?: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }) {
@@ -244,8 +248,17 @@ function ConversationItem({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <CategoryIcon size={14} className={`shrink-0 ${iconColor}`} />
+          {isLoading ? (
+            <div className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin shrink-0" />
+          ) : (
+            <CategoryIcon size={14} className={`shrink-0 ${iconColor}`} />
+          )}
           <span className="text-sm font-medium truncate">{displayTitle}</span>
+          {isLoading && (
+            <span className="text-[10px] text-primary-600 dark:text-primary-400 font-normal animate-pulse">
+              Loading...
+            </span>
+          )}
         </div>
         <button
           onClick={(e) => {

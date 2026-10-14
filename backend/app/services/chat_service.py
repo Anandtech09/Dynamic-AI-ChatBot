@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.orchestrator import AIOrchestrator, OrchestratorResult
 from app.core.config import get_settings
 from app.core.security import detect_prompt_injection, sanitize_input, validate_message_length
+from app.services.cache_service import get_cache_service
 from app.db.repositories import (
     ConversationRepository,
     ConversationSummaryRepository,
@@ -114,6 +115,7 @@ class ChatService:
             temperature=temperature,
             max_tokens=max_tokens,
             image_data=request.image_data,
+            rag_document_title=request.rag_document_title,
         )
 
         # 7. Store assistant message with metadata
@@ -171,6 +173,14 @@ class ChatService:
                     await self.summary_repo.upsert(conversation.id, new_summary, all_count)
             except Exception as e:
                 logger.warning("Summary generation failed: %s", e)
+
+        # Invalidate conversation cache and recent conversations list
+        try:
+            cache = get_cache_service()
+            await cache.delete(f"conv:{conversation.id}:detail")
+            await cache.delete_pattern("conv:list:*")
+        except Exception as e:
+            logger.debug("Failed to invalidate conversation cache: %s", e)
 
         # 10. Build response
         return ChatResponseData(

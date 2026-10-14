@@ -8,7 +8,13 @@ export interface ChatMessage {
   sentiment?: { label: string; score: number };
   emotion?: { label: string; score: number };
   entities?: { text: string; label: string }[];
-  sources?: { title: string; section?: string; score?: number }[];
+  sources?: {
+    title: string;
+    section?: string;
+    score?: number;
+    rrf_score?: number;
+    recall_at_k?: number;
+  }[];
   response_time_ms?: number;
   is_fallback?: boolean;
   is_error?: boolean;
@@ -47,7 +53,13 @@ export interface ChatResponseData {
   sentiment?: { label: string; score: number };
   emotion?: { label: string; score: number };
   entities?: { text: string; label: string }[];
-  sources?: { title: string; section?: string; score?: number }[];
+  sources?: {
+    title: string;
+    section?: string;
+    score?: number;
+    rrf_score?: number;
+    recall_at_k?: number;
+  }[];
   suggestions?: string[];
   response_time_ms: number;
   is_demo?: boolean;
@@ -58,15 +70,21 @@ export interface ChatResponseData {
 
 export interface RagDocument {
   title: string;
-  chunks: number;
+  chunks?: number;
+  chunk_count?: number;
+  character_count?: number;
   source: string;
   category?: string;
+  created_at?: string;
 }
 
 export interface RagUploadResponse {
   success: boolean;
   title: string;
-  chunks: number;
+  chunks?: number;
+  chunk_count?: number;
+  page_count?: number;
+  character_count?: number;
   message: string;
 }
 
@@ -78,6 +96,9 @@ export interface LearningStats {
   adaptation_score: number;
   top_rewarded_intents: { intent: string; avg_reward: number; count: number }[];
   policy_weights: Record<string, number>;
+  interactions?: number;
+  cumulative_reward?: number;
+  rewards_history?: Array<{ rating: number; reward: number; intent: string; comment?: string }>;
 }
 
 export interface ApiResponse<T> {

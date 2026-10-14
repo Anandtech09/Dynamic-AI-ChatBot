@@ -50,3 +50,19 @@ async def analytics_activity(
     service = AnalyticsService(db)
     data = await service.get_activity_data(days=days)
     return AnalyticsResponse(success=True, data=data)
+
+
+@router.get("/learning", response_model=AnalyticsResponse)
+async def analytics_learning():
+    """
+    Get dynamic self-learning and reinforcement metrics from learning_state.json.
+    Reports adaptation score, human feedback stats, cumulative rewards,
+    and intent policy weights.
+    """
+    from app.nlp.self_learning import get_self_learning_service
+    service = get_self_learning_service()
+    data = service.get_stats()
+    data["interactions"] = service.state.get("interactions", 0)
+    data["cumulative_reward"] = round(float(service.state.get("cumulative_reward", 0.0)), 3)
+    data["rewards_history"] = list(reversed(service.state.get("rewards", [])[-15:]))
+    return AnalyticsResponse(success=True, data=data)

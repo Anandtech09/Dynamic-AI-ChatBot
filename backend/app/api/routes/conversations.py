@@ -34,12 +34,22 @@ async def get_conversation(
     conversation_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a conversation with all its messages."""
+    """Get a conversation with all its messages (accelerated with Redis cache)."""
+    from app.services.cache_service import get_cache_service
+    cache = get_cache_service()
+    cache_key = f"conv:{conversation_id}:detail"
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        return {"success": True, "data": cached, "cached": True}
+
     service = ConversationService(db)
     detail = await service.get_conversation(conversation_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"success": True, "data": detail.model_dump()}
+
+    dumped = detail.model_dump()
+    await cache.set(cache_key, dumped, ttl=1800)
+    return {"success": True, "data": dumped, "cached": False}
 
 
 @router.delete("/{conversation_id}")
@@ -52,6 +62,11 @@ async def delete_conversation(
     deleted = await service.delete_conversation(conversation_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    from app.services.cache_service import get_cache_service
+    cache = get_cache_service()
+    await cache.delete(f"conv:{conversation_id}:detail")
+    await cache.delete_pattern("conv:list:*")
     return {"success": True, "message": "Conversation deleted"}
 
 

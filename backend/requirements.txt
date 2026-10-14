@@ -19,6 +19,7 @@ langchain-core==0.3.28
 
 # Vector Store / RAG (PostgreSQL pgvector native)
 pgvector>=0.3.0
+pypdf>=5.0.0
 
 # Redis
 redis==5.2.1
